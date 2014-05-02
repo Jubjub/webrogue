@@ -134,10 +134,91 @@ typedef struct {
 /* globals */
 consoleCell *console = 0;
 
+/* websocket */
+#include <libwebsockets.h>
+
+#define MAX_BROGUE_PAYLOAD 1400
+
+struct sessionData {
+    uint8 buf[LWS_SEND_BUFFER_PRE_PADDING + MAX_BROGUE_PAYLOAD + LWS_SEND_BUFFER_POST_PADDING];
+    uint32 len;
+    uint32 index;
+};
+
+static int callback_brogue(struct libwebsocket_context *context, struct libwebsocket *wsi,
+        enum libwebsocket_callback_reasons reason, void *user, void *in, size_t len) {
+    struct sessionData *pss = (struct sessionData *)user;
+    int n;
+    switch (reason) {
+        case LWS_CALLBACK_SERVER_WRITEABLE:
+            //n = libwebsocket_write(wsi, &pss->buf[LWS_SEND_BUFFER_PRE_PADDING],
+                    //pss->len, LWS_WRITE_TEXT);
+            if (n < 0) {
+                lwsl_err("ERROR %d writing to socket, hanging up\n", n);
+                return 1;
+            }
+            if (n < (int)pss->len) {
+                lwsl_err("Partial write\n");
+                return -1;
+            }
+            break;
+
+        case LWS_CALLBACK_RECEIVE:
+            if (len > MAX_BROGUE_PAYLOAD) {
+                lwsl_err("Server received packet bigger than %u, hanging up\n",
+                        MAX_BROGUE_PAYLOAD);
+                return 1;
+            }
+            memcpy(&pss->buf[LWS_SEND_BUFFER_PRE_PADDING], in, len);
+            pss->len = (uint32)len;
+            printf("received: %s\n", in);
+            libwebsocket_callback_on_writable(context, wsi);
+            break;
+        default:
+            break;
+    }
+
+    return 0;
+}
+
+static struct libwebsocket_protocols protocols[] = {
+    /* first protocol must always be HTTP handler */
+    {
+        "default",		/* name */
+        callback_brogue,		/* callback */
+        sizeof(struct sessionData)	/* per_session_data_size */
+    },
+    {
+        NULL, NULL, 0		/* End of list */
+    }
+};
+
+
+struct libwebsocket_context *context;
+
+void init_websockets() {
+    struct lws_context_creation_info info;
+    memset(&info, 0, sizeof(info));
+    info.port = 7732;
+    info.protocols = protocols;
+    context = libwebsocket_create_context(&info);
+    if (!context) {
+        puts("unable to create lws context");
+        exit(1);
+    }
+}
+
 /* compat functions */
 
 bool TCOD_console_is_key_pressed(TCOD_keycode_t key) {
     return false;
+}
+
+void TCOD_sys_sleep_milli(int ms) {
+    Sleep(ms);
+    /* FIXME: lag? never heard of it! */
+    int n;
+    n = libwebsocket_service(context, 0);
 }
 
 void console_put_char_ex(int x, int y, int character, TCOD_color_t fg, TCOD_color_t bg) {
@@ -177,6 +258,8 @@ static void loadFont(int detectSize) {
     puts("initializing console");
     printf("buffer size: %ix%i\n", COLS, ROWS);
     console = malloc(sizeof(consoleCell) * COLS * ROWS);
+    puts("initializing websocket");
+    init_websockets();
 }
 
 static void gameLoop()
@@ -390,7 +473,7 @@ static boolean tcod_pauseForMilliseconds(short milliseconds)
 {
     TCOD_mouse_t mouse;
     TCOD_console_flush();
-    //TCOD_sys_sleep_milli((unsigned int) milliseconds);
+    TCOD_sys_sleep_milli((unsigned int) milliseconds);
 
 #ifdef USE_NEW_TCOD_API
     if (bufferedKey.vk == TCODK_NONE) {

@@ -28,7 +28,7 @@ OBJS=BrogueCode/Architect.o \
 all : brogue
 
 brogue : ${OBJS} 
-	g++ -o brogue.exe ${OBJS} -L. -L$(LIBTCODDIR)/ -static-libgcc\
+	g++ -o brogue.exe ${OBJS} -L. -L$(LIBTCODDIR)/ -lwebsockets_static -lZLIB -lws2_32 -static-libgcc\
 	    -static-libstdc++
 
 .PHONY: run
