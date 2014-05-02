@@ -1,8 +1,6 @@
 #include "platform.h"
 
 #ifdef BROGUE_TCOD
-#include "libtcod.h"
-TCOD_renderer_t renderer = TCOD_RENDERER_SDL; // the sdl renderer is more reliable than the opengl renderer
 short brogueFontSize = -1;
 #endif
 
@@ -168,16 +166,6 @@ int main(int argc, char *argv[])
 		}
 
 #ifdef BROGUE_TCOD
-		if (strcmp(argv[i], "--SDL") == 0) {
-			renderer = TCOD_RENDERER_SDL;
-			currentConsole = tcodConsole;
-			continue;
-		}
-		if (strcmp(argv[i], "--opengl") == 0 || strcmp(argv[i], "-gl") == 0) {
-			renderer = TCOD_RENDERER_OPENGL;
-			currentConsole = tcodConsole;
-			continue;
-		}
 		if (strcmp(argv[i], "--size") == 0) {
 			// pick a font size
 			int size = atoi(argv[i + 1]);
