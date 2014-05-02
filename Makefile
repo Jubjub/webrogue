@@ -1,9 +1,9 @@
 LIBTCODDIR=libtcod-1.5.1
 SDLDIR=SDL-1.2.14
-CFLAGS=$(FLAGS) -I$(LIBTCODDIR)/include -I$(SDLDIR)/include -IBrogueCode -IPlatformCode -DBROGUE_TCOD -g
+CFLAGS=$(FLAGS) -I$(LIBTCODDIR)/include -I$(SDLDIR)/include -IBrogueCode -IPlatformCode -DBROGUE_TCOD
 
 %.o : %.c
-	gcc $(CFLAGS) -O2 -s -o $@ -c $< 
+	gcc $(CFLAGS) -pg -O2 -s -o $@ -c $< 
 
 OBJS=BrogueCode/Architect.o \
 	BrogueCode/Combat.o \
@@ -23,12 +23,13 @@ OBJS=BrogueCode/Architect.o \
 	BrogueCode/Time.o \
 	PlatformCode/main.o \
 	PlatformCode/platformdependent.o \
-	PlatformCode/tcod-platform.o 
+	PlatformCode/tcod-platform.o \
+	PlatformCode/cJSON.o
 
 all : brogue
 
 brogue : ${OBJS} 
-	g++ -o brogue.exe ${OBJS} -L. -L$(LIBTCODDIR)/ -lwebsockets_static -lZLIB -lws2_32 -static-libgcc\
+	g++ -o brogue.exe ${OBJS} -L. -L$(LIBTCODDIR)/ -pg -lwebsockets_static -lZLIB -lws2_32 -static-libgcc\
 	    -static-libstdc++
 
 .PHONY: run

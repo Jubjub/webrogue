@@ -2,7 +2,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <libwebsockets.h>
 #include "platform.h"
+#include "cJSON.h"
+
 
 #if TCOD_TECHVERSION >= 0x01050103
 #define USE_NEW_TCOD_API
@@ -129,14 +132,14 @@ typedef struct {
     int character;
     TCOD_color_t foreground;
     TCOD_color_t background;
-} consoleCell;
+} ConsoleCell;
 
 /* globals */
-consoleCell *console = 0;
+bool needs_websocket_update = false;
+char *consoleJSON = 0;
+ConsoleCell *console = 0;
 
 /* websocket */
-#include <libwebsockets.h>
-
 #define MAX_BROGUE_PAYLOAD 1400
 
 struct sessionData {
@@ -150,46 +153,50 @@ static int callback_brogue(struct libwebsocket_context *context, struct libwebso
     struct sessionData *pss = (struct sessionData *)user;
     int n;
     switch (reason) {
+        case LWS_CALLBACK_ESTABLISHED:
+            puts("client connected");
+            /* start triggering callbacks */
+            libwebsocket_callback_on_writable(context, wsi);
+            break;
+
         case LWS_CALLBACK_SERVER_WRITEABLE:
-            //n = libwebsocket_write(wsi, &pss->buf[LWS_SEND_BUFFER_PRE_PADDING],
-                    //pss->len, LWS_WRITE_TEXT);
-            if (n < 0) {
-                lwsl_err("ERROR %d writing to socket, hanging up\n", n);
-                return 1;
+            puts("checking for deliverable data");
+            if (needs_websocket_update) {
+                puts("delivering data");
+                needs_websocket_update = false;
+                n = libwebsocket_write(wsi, &consoleJSON[LWS_SEND_BUFFER_PRE_PADDING],
+                        strlen(consoleJSON + LWS_SEND_BUFFER_PRE_PADDING), LWS_WRITE_TEXT);
+                if (n < 0) {
+                    lwsl_err("ERROR %d writing to socket, hanging up\n", n);
+                    return 1;
+                }
+                if (n < (int)pss->len) {
+                    lwsl_err("Partial write\n");
+                    return -1;
+                }
             }
-            if (n < (int)pss->len) {
-                lwsl_err("Partial write\n");
-                return -1;
-            }
+            libwebsocket_callback_on_writable(context, wsi);
             break;
 
         case LWS_CALLBACK_RECEIVE:
-            if (len > MAX_BROGUE_PAYLOAD) {
-                lwsl_err("Server received packet bigger than %u, hanging up\n",
-                        MAX_BROGUE_PAYLOAD);
-                return 1;
-            }
-            memcpy(&pss->buf[LWS_SEND_BUFFER_PRE_PADDING], in, len);
-            pss->len = (uint32)len;
-            printf("received: %s\n", in);
-            libwebsocket_callback_on_writable(context, wsi);
+                memcpy(&pss->buf[LWS_SEND_BUFFER_PRE_PADDING], in, len);
+                pss->len = (uint32)len;
+                printf("received: %s\n", in);
             break;
         default:
             break;
     }
-
     return 0;
 }
 
 static struct libwebsocket_protocols protocols[] = {
-    /* first protocol must always be HTTP handler */
     {
-        "default",		/* name */
-        callback_brogue,		/* callback */
-        sizeof(struct sessionData)	/* per_session_data_size */
+        "default",
+        callback_brogue,
+        sizeof(struct sessionData)
     },
     {
-        NULL, NULL, 0		/* End of list */
+        NULL, NULL, 0
     }
 };
 
@@ -218,7 +225,7 @@ void TCOD_sys_sleep_milli(int ms) {
     Sleep(ms);
     /* FIXME: lag? never heard of it! */
     int n;
-    n = libwebsocket_service(context, 0);
+    n = libwebsocket_service(context, 3000);
 }
 
 void console_put_char_ex(int x, int y, int character, TCOD_color_t fg, TCOD_color_t bg) {
@@ -226,7 +233,9 @@ void console_put_char_ex(int x, int y, int character, TCOD_color_t fg, TCOD_colo
     console[y * COLS + x].foreground = fg;
     console[y * COLS + x].background = bg;
 }
+
 void TCOD_console_flush() {
+    /*
     FILE *fp = fopen("out.txt", "wb");
     int x, y;
     for (y = 0; y < ROWS; y++) {
@@ -236,6 +245,29 @@ void TCOD_console_flush() {
         fputc('\n', fp);
     }
     fclose(fp);
+    */
+    cJSON *root, *tiles;
+    root = cJSON_CreateObject();
+    cJSON_AddItemToObject(root, "tiles",  tiles = cJSON_CreateArray());
+    int x, y;
+    for (y = 0; y < ROWS; y++) {
+        for (x = 0; x < COLS; x++) {
+            ConsoleCell *cell = &console[y * COLS + x];
+            cJSON *tile;
+            cJSON_AddItemToArray(tiles, tile = cJSON_CreateArray());
+            cJSON_AddItemToArray(tile, cJSON_CreateNumber(x));
+            cJSON_AddItemToArray(tile, cJSON_CreateNumber(y));
+            cJSON_AddItemToArray(tile, cJSON_CreateNumber(cell->character));
+        }
+    }
+    char *json = cJSON_Print(root);
+    cJSON_Delete(root);
+    free(consoleJSON);
+    consoleJSON = malloc(LWS_SEND_BUFFER_PRE_PADDING + strlen(json) + 1
+            + LWS_SEND_BUFFER_POST_PADDING);
+    strcpy(consoleJSON + LWS_SEND_BUFFER_PRE_PADDING, json);
+    free(json);
+    needs_websocket_update = true;
 }
 
 /************************/
@@ -257,7 +289,7 @@ static int desktop_width, desktop_height;
 static void loadFont(int detectSize) {
     puts("initializing console");
     printf("buffer size: %ix%i\n", COLS, ROWS);
-    console = malloc(sizeof(consoleCell) * COLS * ROWS);
+    console = malloc(sizeof(ConsoleCell) * COLS * ROWS);
     puts("initializing websocket");
     init_websockets();
 }
