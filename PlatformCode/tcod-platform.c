@@ -124,15 +124,42 @@ typedef struct {
     bool shift ;
 } TCOD_key_t;
 
+/* holds characters in the virtual console */
+typedef struct {
+    int character;
+    TCOD_color_t foreground;
+    TCOD_color_t background;
+} consoleCell;
+
+/* globals */
+consoleCell *console = 0;
+
+/* compat functions */
+
 bool TCOD_console_is_key_pressed(TCOD_keycode_t key) {
     return false;
 }
 
+void console_put_char_ex(int x, int y, int character, TCOD_color_t fg, TCOD_color_t bg) {
+    console[y * COLS + x].character = character;
+    console[y * COLS + x].foreground = fg;
+    console[y * COLS + x].background = bg;
+}
+void TCOD_console_flush() {
+    FILE *fp = fopen("out.txt", "wb");
+    int x, y;
+    for (y = 0; y < ROWS; y++) {
+        for (x = 0; x < COLS; x++) {
+            fputc(console[y * COLS + x].character, fp);
+        }
+        fputc('\n', fp);
+    }
+    fclose(fp);
+}
 
 /************************/
 
 extern playerCharacter rogue;
-//extern TCOD_renderer_t renderer;
 extern short brogueFontSize;
 
 struct mouseState {int x, y, lmb, rmb;};
@@ -147,7 +174,9 @@ static struct mouseState missedMouse = {-1, -1, 0, 0};
 static int desktop_width, desktop_height;
 
 static void loadFont(int detectSize) {
-    puts("Skipping font loading.");
+    puts("initializing console");
+    printf("buffer size: %ix%i\n", COLS, ROWS);
+    console = malloc(sizeof(consoleCell) * COLS * ROWS);
 }
 
 static void gameLoop()
@@ -206,8 +235,8 @@ static void tcod_plotChar(uchar inputChar,
             default: inputChar = '?'; break;
         }
     }
-    printf("%i %i %c\n", xLoc, yLoc, inputChar);
-    //TCOD_console_put_char_ex(NULL, xLoc, yLoc, (int) inputChar, fore, back);
+    //printf("%i %i %c\n", xLoc, yLoc, inputChar);
+    console_put_char_ex(xLoc, yLoc, (int) inputChar, fore, back);
 }
 
 static void initWithFont(int fontSize)
@@ -217,56 +246,7 @@ static void initWithFont(int fontSize)
 }
 
 static boolean processSpecialKeystrokes(TCOD_key_t k, boolean text) {
-    if (k.vk == TCODK_PRINTSCREEN) {
-        // screenshot
-        //TCOD_sys_save_screenshot(NULL);
-        return true;
-    } else if ( (k.vk == TCODK_F12) || ((k.lalt || k.ralt) && (k.vk == TCODK_ENTER || k.vk == TCODK_KPENTER) )) {
-        if (!isFullScreen) {
-            int font_w, font_h;
-
-            //TCOD_sys_get_char_size(&font_w, &font_h);
-            if (desktop_width < font_w * COLS || desktop_height < font_h * ROWS) {
-                // refuse to go full screen if the font is too big
-                return true;
-            }
-        }
-
-        isFullScreen = !isFullScreen;
-        //TCOD_console_set_fullscreen(isFullScreen);
-        return true;
-    } else if ((k.vk == TCODK_PAGEUP
-                || ((!text) && k.vk == TCODK_CHAR && (k.c == '=' || k.c == '+')))
-            && brogueFontSize < 13) {
-
-        if (isFullScreen) {
-            //TCOD_console_set_fullscreen(0);
-            isFullScreen = 0;
-        }
-
-        brogueFontSize++;
-        //TCOD_console_delete(NULL);
-
-        initWithFont(brogueFontSize);
-
-        //TCOD_console_flush();
-        return true;
-    } else if ((k.vk == TCODK_PAGEDOWN
-                || ((!text) && k.vk == TCODK_CHAR && k.c == '-'))
-            && brogueFontSize > 1) {
-
-        if (isFullScreen) {
-            //TCOD_console_set_fullscreen(0);
-            isFullScreen = 0;
-        }
-
-        brogueFontSize--;
-        //TCOD_console_delete(NULL);
-
-        initWithFont(brogueFontSize);
-        //TCOD_console_flush();
-        return true;
-    }
+    /* we dont' really need screenshot and resizing keys */
     return false;
 }
 
@@ -409,7 +389,7 @@ static boolean processKeystroke(TCOD_key_t key, rogueEvent *returnEvent, boolean
 static boolean tcod_pauseForMilliseconds(short milliseconds)
 {
     TCOD_mouse_t mouse;
-    //TCOD_console_flush();
+    TCOD_console_flush();
     //TCOD_sys_sleep_milli((unsigned int) milliseconds);
 
 #ifdef USE_NEW_TCOD_API
@@ -449,7 +429,7 @@ static void tcod_nextKeyOrMouseEvent(rogueEvent *returnEvent, boolean textInput,
     uint32 theTime, waitTime;
     short x, y;
 
-    //TCOD_console_flush();
+    TCOD_console_flush();
 
     key.vk = TCODK_NONE;
 
