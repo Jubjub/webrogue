@@ -145,6 +145,10 @@ static TCOD_key_t bufferedKey = {TCODK_NONE};
 /* websocket */
 #define MAX_BROGUE_PAYLOAD 1400
 
+int color_to_js(TCOD_color_t color) {
+    return color.r << 16 | color.g << 8 | color.b;
+}
+
 TCOD_keycode_t parse_js_keycode(int k) {
     switch (k) {
         case 27:
@@ -272,13 +276,19 @@ static int callback_brogue(struct libwebsocket_context *context, struct libwebso
                 //pss->len = (uint32)len;
                 //puts(pss->buf[LWS_SEND_BUFFER_PRE_PADDING]);
                 printf("received: %s\n", in);
+                /* FIXME: key queue */
                 cJSON *message = cJSON_Parse(in);
                 int jsKeycode = cJSON_GetObjectItem(message, "keycode")->valueint;
+                memset(&bufferedKey, 0, sizeof(TCOD_key_t));
                 bufferedKey.vk = parse_js_keycode(jsKeycode);
                 if (bufferedKey.vk == TCODK_CHAR) {
                     bufferedKey.c = jsKeycode;
                 }
-                printf("key received: %c\n", tolower(bufferedKey.c));
+                bufferedKey.shift = cJSON_GetObjectItem(message, "shift")->valueint;
+                bufferedKey.lctrl = bufferedKey.rctrl =
+                    cJSON_GetObjectItem(message, "ctrl")->valueint;
+                printf("key received: %c shift: %i, ctrl: %i\n", bufferedKey.c,
+                        bufferedKey.shift, bufferedKey.rctrl);
                 cJSON_Delete(message);
                 libwebsocket_callback_on_writable(context, wsi);
             break;
@@ -348,6 +358,7 @@ void TCOD_console_flush() {
     }
     fclose(fp);
     */
+    puts("rendering...");
     cJSON *root, *tiles;
     root = cJSON_CreateObject();
     cJSON_AddItemToObject(root, "tiles",  tiles = cJSON_CreateArray());
@@ -360,6 +371,8 @@ void TCOD_console_flush() {
             cJSON_AddItemToArray(tile, cJSON_CreateNumber(x));
             cJSON_AddItemToArray(tile, cJSON_CreateNumber(y));
             cJSON_AddItemToArray(tile, cJSON_CreateNumber(cell->character));
+            int fg = color_to_js(cell->foreground);
+            cJSON_AddItemToArray(tile, cJSON_CreateNumber(fg));
         }
     }
     char *json = cJSON_Print(root);
@@ -392,6 +405,7 @@ static void loadFont(int detectSize) {
     printf("buffer size: %ix%i\n", COLS, ROWS);
     console = malloc(sizeof(ConsoleCell) * COLS * ROWS);
     puts("initializing websocket");
+    memset(&bufferedKey, 0, sizeof(TCOD_key_t));
     init_websockets();
 }
 
@@ -494,11 +508,8 @@ static void rewriteKey(TCOD_key_t *key, bool text) {
 }
 
 static void getModifiers(rogueEvent *returnEvent) {
-    /* FIXME: rewrite
-       Uint8 *keystate = SDL_GetKeyState(NULL);
-       returnEvent->controlKey = keystate[SDLK_LCTRL] || keystate[SDLK_RCTRL];
-       returnEvent->shiftKey = keystate[SDLK_LSHIFT] || keystate[SDLK_RSHIFT];
-       */
+    returnEvent->controlKey = bufferedKey.lctrl || bufferedKey.rctrl;
+    returnEvent->shiftKey = bufferedKey.shift;
 }
 
 
@@ -519,7 +530,8 @@ static bool processKeystroke(TCOD_key_t key, rogueEvent *returnEvent, bool text)
         case TCODK_8:
         case TCODK_9:
             returnEvent->param1 = (unsigned short) key.c;
-            if (returnEvent->shiftKey && returnEvent->param1 >= 'a' && returnEvent->param1 <= 'z') {
+            if (returnEvent->shiftKey && returnEvent->param1 >= 'a'
+                    && returnEvent->param1 <= 'z') {
                 returnEvent->param1 += 'A' - 'a';
             }
             break;
@@ -599,7 +611,7 @@ static bool tcod_pauseForMilliseconds(short milliseconds)
     n = libwebsocket_service(context, 3000);
 
     if (bufferedKey.vk == TCODK_NONE) {
-        //bufferedKey = TCOD_console_check_for_keypress(TCOD_KEY_PRESSED);
+        bufferedKey = TCOD_console_check_for_keypress(TCOD_KEY_PRESSED);
     }
 
     if (missedMouse.lmb == 0 && missedMouse.rmb == 0) {

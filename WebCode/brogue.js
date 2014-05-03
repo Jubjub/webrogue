@@ -36,7 +36,9 @@ for (var y = 0; y < rows; y++) {
     var sprite = new PIXI.Sprite(glyphs[0]);
     sprite.position.x = x * tileWidth;
     sprite.position.y = y * tileHeight;
-    batch.addChild(sprite);
+    /* FIXME: check if there's a way to use tinted sprites with batches */
+    //batch.addChild(sprite);
+    stage.addChild(sprite)
     vconsole[y * cols + x] = sprite;
   }
 }
@@ -46,6 +48,8 @@ document.addEventListener('keydown', function(e) {
   console.log(e.keyCode);
   inputMessage = new Object();
   inputMessage["keycode"] = e.keyCode;
+  inputMessage["shift"] = e.shiftKey;
+  inputMessage["ctrl"] = e.ctrlKey;
   websocket.send(JSON.stringify(inputMessage));
 });
 
@@ -62,6 +66,8 @@ function onMessage(e) {
   data = JSON.parse(e.data);
   for (var i = 0; i < data["tiles"].length; i++) {
     var tile = data["tiles"][i];
-    vconsole[tile[1] * cols + tile[0]].texture = glyphs[tile[2]];
+    var cell = vconsole[tile[1] * cols + tile[0]];
+    cell.texture = glyphs[tile[2]];
+    cell.tint = tile[3];
   }
 }
