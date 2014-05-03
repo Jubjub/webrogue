@@ -139,6 +139,9 @@ bool needs_websocket_update = false;
 char *consoleJSON = 0;
 ConsoleCell *console = 0;
 
+/* existing globals needed by compatibility layer */
+static TCOD_key_t bufferedKey = {TCODK_NONE};
+
 /* websocket */
 #define MAX_BROGUE_PAYLOAD 1400
 
@@ -179,9 +182,16 @@ static int callback_brogue(struct libwebsocket_context *context, struct libwebso
             break;
 
         case LWS_CALLBACK_RECEIVE:
-                memcpy(&pss->buf[LWS_SEND_BUFFER_PRE_PADDING], in, len);
-                pss->len = (uint32)len;
+                //memcpy(&pss->buf[LWS_SEND_BUFFER_PRE_PADDING], in, len);
+                //pss->len = (uint32)len;
+                //puts(pss->buf[LWS_SEND_BUFFER_PRE_PADDING]);
                 printf("received: %s\n", in);
+                cJSON *message = cJSON_Parse(in);
+                bufferedKey.vk = TCODK_CHAR;
+                bufferedKey.c = cJSON_GetObjectItem(message, "keycode")->valueint; 
+                printf("key received: %c\n", tolower(bufferedKey.c));
+                cJSON_Delete(message);
+                libwebsocket_callback_on_writable(context, wsi);
             break;
         default:
             break;
@@ -221,11 +231,14 @@ bool TCOD_console_is_key_pressed(TCOD_keycode_t key) {
     return false;
 }
 
-void TCOD_sys_sleep_milli(int ms) {
-    Sleep(ms);
-    /* FIXME: lag? never heard of it! */
+TCOD_key_t TCOD_console_check_for_keypress(TCOD_key_status_t status) {
     int n;
     n = libwebsocket_service(context, 3000);
+    return bufferedKey;
+}
+
+void TCOD_sys_sleep_milli(int ms) {
+    Sleep(ms);
 }
 
 void console_put_char_ex(int x, int y, int character, TCOD_color_t fg, TCOD_color_t bg) {
@@ -280,7 +293,6 @@ struct mouseState {int x, y, lmb, rmb;};
 static int isFullScreen = false;
 static int hasMouseMoved = false;
 
-static TCOD_key_t bufferedKey = {TCODK_NONE};
 static struct mouseState brogueMouse = {0, 0, 0, 0};
 static struct mouseState missedMouse = {-1, -1, 0, 0};
 
@@ -360,12 +372,6 @@ static void initWithFont(int fontSize)
     refreshScreen();
 }
 
-static boolean processSpecialKeystrokes(TCOD_key_t k, boolean text) {
-    /* we dont' really need screenshot and resizing keys */
-    return false;
-}
-
-
 struct mapsymbol {
     int in_vk, out_vk;
     int in_c, out_c;
@@ -374,30 +380,28 @@ struct mapsymbol {
 
 static struct mapsymbol *keymap = NULL;
 
-static void rewriteKey(TCOD_key_t *key, boolean text) {
-    /* FIXME: rewrite
-       if (key->vk == TCODK_CHAR && (SDL_GetModState() & KMOD_CAPS)) {
-    // cancel out caps lock
-    if (!key->shift) {
-    key->c = tolower(key->c);
-    }
+static void rewriteKey(TCOD_key_t *key, bool text) {
+    if (key->vk == TCODK_CHAR) {/* FIXME: && (SDL_GetModState() & KMOD_CAPS)) { */
+        // cancel out caps lock
+        if (!key->shift) {
+            key->c = tolower(key->c);
+        }
     }
 
     struct mapsymbol *s = keymap;
     while (s != NULL) {
-    if (key->vk == s->in_vk) {
-    if (s->in_vk != TCODK_CHAR || (!text && s->in_c == key->c)) {
-    // we have a match!
-    key->vk = s->out_vk;
-    key->c = s->out_c;
+        if (key->vk == s->in_vk) {
+            if (s->in_vk != TCODK_CHAR || (!text && s->in_c == key->c)) {
+                // we have a match!
+                key->vk = s->out_vk;
+                key->c = s->out_c;
 
-    // only apply one remapping
-    return;
+                // only apply one remapping
+                return;
+            }
+        }
+        s = s->next;
     }
-    }
-    s = s->next;
-    }
-    */
 }
 
 static void getModifiers(rogueEvent *returnEvent) {
@@ -410,12 +414,7 @@ static void getModifiers(rogueEvent *returnEvent) {
 
 
 // returns true if input is acceptable
-static boolean processKeystroke(TCOD_key_t key, rogueEvent *returnEvent, boolean text)
-{
-    if (processSpecialKeystrokes(key, text)) {
-        return false;
-    }
-
+static bool processKeystroke(TCOD_key_t key, rogueEvent *returnEvent, bool text) {
     returnEvent->eventType = KEYSTROKE;
     getModifiers(returnEvent);
     switch (key.vk) {
@@ -501,11 +500,14 @@ static boolean processKeystroke(TCOD_key_t key, rogueEvent *returnEvent, boolean
     return true;
 }
 
-static boolean tcod_pauseForMilliseconds(short milliseconds)
+static bool tcod_pauseForMilliseconds(short milliseconds)
 {
     TCOD_mouse_t mouse;
     TCOD_console_flush();
     TCOD_sys_sleep_milli((unsigned int) milliseconds);
+    /* FIXME: lag? never heard of it! */
+    int n;
+    n = libwebsocket_service(context, 3000);
 
 #ifdef USE_NEW_TCOD_API
     if (bufferedKey.vk == TCODK_NONE) {
@@ -530,15 +532,16 @@ static boolean tcod_pauseForMilliseconds(short milliseconds)
         }
     }
 
+    /* return true if a new input event is available */
     return (bufferedKey.vk != TCODK_NONE || missedMouse.lmb || missedMouse.rmb);
 }
 
 
 #define PAUSE_BETWEEN_EVENT_POLLING		36//17
 
-static void tcod_nextKeyOrMouseEvent(rogueEvent *returnEvent, boolean textInput, boolean colorsDance)
-{
-    boolean tryAgain;
+static void tcod_nextKeyOrMouseEvent(rogueEvent *returnEvent, bool textInput, bool colorsDance) {
+    puts("tcod_nextKeyOrMouseEvent");
+    bool tryAgain;
     TCOD_key_t key;
     TCOD_mouse_t mouse;
     uint32 theTime, waitTime;
@@ -618,11 +621,7 @@ static void tcod_nextKeyOrMouseEvent(rogueEvent *returnEvent, boolean textInput,
             TCOD_console_flush();
             }*/
 
-#ifdef USE_NEW_TCOD_API
-        TCOD_sys_check_for_event(TCOD_EVENT_KEY_PRESS | TCOD_EVENT_MOUSE, &key, &mouse);
-#else
-        //key = TCOD_console_check_for_keypress(TCOD_KEY_PRESSED);
-#endif
+        key = TCOD_console_check_for_keypress(TCOD_KEY_PRESSED);
 
         rewriteKey(&key, textInput);
         if (processKeystroke(key, returnEvent, textInput)) {
@@ -811,7 +810,7 @@ static void tcod_remap(const char *input_name, const char *output_name) {
     keymap = sym;
 }
 
-static boolean modifier_held(int modifier) {
+static bool modifier_held(int modifier) {
     rogueEvent tempEvent;
 
     getModifiers(&tempEvent);

@@ -3,7 +3,7 @@ SDLDIR=SDL-1.2.14
 CFLAGS=$(FLAGS) -I$(LIBTCODDIR)/include -I$(SDLDIR)/include -IBrogueCode -IPlatformCode -DBROGUE_TCOD
 
 %.o : %.c
-	gcc $(CFLAGS) -pg -O2 -s -o $@ -c $< 
+	gcc $(CFLAGS) -g -O2 -s -o $@ -c $< 
 
 OBJS=BrogueCode/Architect.o \
 	BrogueCode/Combat.o \
@@ -29,7 +29,7 @@ OBJS=BrogueCode/Architect.o \
 all : brogue
 
 brogue : ${OBJS} 
-	g++ -o brogue.exe ${OBJS} -L. -L$(LIBTCODDIR)/ -pg -lwebsockets_static -lZLIB -lws2_32 -static-libgcc\
+	g++ -o brogue.exe ${OBJS} -L. -L$(LIBTCODDIR)/ -g -lwebsockets_static -lZLIB -lws2_32 -static-libgcc\
 	    -static-libstdc++
 
 .PHONY: run
