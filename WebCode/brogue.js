@@ -41,23 +41,22 @@ for (var y = 0; y < rows; y++) {
   }
 }
 
-  /* main loop */
+/* set up input */
+document.addEventListener('keydown', function(e) {
+  console.log(e.keyCode);
+  inputMessage = new Object();
+  inputMessage["keycode"] = e.keyCode;
+  websocket.send(JSON.stringify(inputMessage));
+});
+
+/* main loop */
 requestAnimFrame(animate);
 function animate() {
   requestAnimFrame(animate);
   renderer.render(stage);
 }
 
-function create() {
-  /* set up input */
-  game.input.keyboard.onDownCallback = function(e) {
-    vconsole.log(e.keyCode);
-    inputMessage = new Object();
-    inputMessage["keycode"] = e.keyCode;
-    websocket.send(JSON.stringify(inputMessage));
-  }
-}
-
+/* parse game update and refresh the virtual console */
 function onMessage(e) {
   //console.log(JSON.parse(e.data));
   data = JSON.parse(e.data);

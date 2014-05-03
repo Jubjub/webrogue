@@ -145,6 +145,92 @@ static TCOD_key_t bufferedKey = {TCODK_NONE};
 /* websocket */
 #define MAX_BROGUE_PAYLOAD 1400
 
+TCOD_keycode_t parse_js_keycode(int k) {
+    switch (k) {
+        case 27:
+            return TCODK_ESCAPE;
+        case 8:
+            return TCODK_BACKSPACE;
+        case 9:
+            return TCODK_TAB;
+        case 13:
+            return TCODK_ENTER;
+        case 16:
+            return TCODK_SHIFT;
+        case 17:
+            return TCODK_CONTROL;
+        case 18:
+            return TCODK_ALT;
+        case 19:
+            return TCODK_PAUSE;
+        case 20:
+            return TCODK_CAPSLOCK;
+        case 33:
+            return TCODK_PAGEUP;
+        case 34:
+            return TCODK_PAGEDOWN;
+        case 35:
+            return TCODK_END;
+        case 36:
+            return TCODK_HOME;
+        case 38:
+            return TCODK_UP;
+        case 37:
+            return TCODK_LEFT;
+        case 39:
+            return TCODK_RIGHT;
+        case 40:
+            return TCODK_DOWN;
+        case 45:
+            return TCODK_INSERT;
+        case 46:
+            return TCODK_DELETE;
+        case 48:
+            return TCODK_0;
+        case 49:
+            return TCODK_1;
+        case 50:
+            return TCODK_2;
+        case 51:
+            return TCODK_3;
+        case 52:
+            return TCODK_4;
+        case 53:
+            return TCODK_5;
+        case 54:
+            return TCODK_6;
+        case 55:
+            return TCODK_7;
+        case 56:
+            return TCODK_8;
+        case 57:
+            return TCODK_9;
+        case 96:
+            return TCODK_KP0;
+        case 97:
+            return TCODK_KP1;
+        case 98:
+            return TCODK_KP2;
+        case 99:
+            return TCODK_KP3;
+        case 100:
+            return TCODK_KP4;
+        case 101:
+            return TCODK_KP5;
+        case 102:
+            return TCODK_KP6;
+        case 103:
+            return TCODK_KP7;
+        case 104:
+            return TCODK_KP8;
+        case 105:
+            return TCODK_KP9;
+        default:
+            return TCODK_CHAR;
+    }
+}
+
+
 struct sessionData {
     uint8 buf[LWS_SEND_BUFFER_PRE_PADDING + MAX_BROGUE_PAYLOAD + LWS_SEND_BUFFER_POST_PADDING];
     uint32 len;
@@ -187,8 +273,11 @@ static int callback_brogue(struct libwebsocket_context *context, struct libwebso
                 //puts(pss->buf[LWS_SEND_BUFFER_PRE_PADDING]);
                 printf("received: %s\n", in);
                 cJSON *message = cJSON_Parse(in);
-                bufferedKey.vk = TCODK_CHAR;
-                bufferedKey.c = cJSON_GetObjectItem(message, "keycode")->valueint; 
+                int jsKeycode = cJSON_GetObjectItem(message, "keycode")->valueint;
+                bufferedKey.vk = parse_js_keycode(jsKeycode);
+                if (bufferedKey.vk == TCODK_CHAR) {
+                    bufferedKey.c = jsKeycode;
+                }
                 printf("key received: %c\n", tolower(bufferedKey.c));
                 cJSON_Delete(message);
                 libwebsocket_callback_on_writable(context, wsi);
@@ -509,17 +598,9 @@ static bool tcod_pauseForMilliseconds(short milliseconds)
     int n;
     n = libwebsocket_service(context, 3000);
 
-#ifdef USE_NEW_TCOD_API
-    if (bufferedKey.vk == TCODK_NONE) {
-        TCOD_sys_check_for_event(TCOD_EVENT_KEY_PRESS | TCOD_EVENT_MOUSE, &bufferedKey, &mouse);
-    } else {
-        TCOD_sys_check_for_event(TCOD_EVENT_MOUSE, 0, &mouse);
-    }
-#else
     if (bufferedKey.vk == TCODK_NONE) {
         //bufferedKey = TCOD_console_check_for_keypress(TCOD_KEY_PRESSED);
     }
-#endif
 
     if (missedMouse.lmb == 0 && missedMouse.rmb == 0) {
         /* FIXME mouse input */
@@ -702,8 +783,6 @@ static void tcod_nextKeyOrMouseEvent(rogueEvent *returnEvent, bool textInput, bo
         */
     }
 }
-
-
 
 // tcodkeys is derived from console_types.h
 char *tcodkeys[] = {
