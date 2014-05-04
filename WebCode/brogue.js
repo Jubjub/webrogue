@@ -18,6 +18,7 @@ websocket.onopen = function(e) {
 websocket.onmessage = onMessage;
 
 /* set up graphics */
+/* TODO: alpha image with the same brighness as the b/w one */
 texture = PIXI.Texture.fromImage("data/images/font-5.png");
 /* generate glyph textures */
 var glyphs = new Array();
@@ -28,16 +29,23 @@ for (var y = 0; y < 16; y++) {
   }
 }
 /* generate character sprites */
+vconsoleBg = new Array();
+for (var y = 0; y < rows; y++) {
+  for (var x = 0; x < cols; x++) {
+    var sprite = new PIXI.Sprite(glyphs[1]);
+    sprite.position.x = x * tileWidth;
+    sprite.position.y = y * tileHeight;
+    stage.addChild(sprite);
+    vconsoleBg[y * cols + x] = sprite;
+  }
+}
+
 vconsole = new Array();
-var batch = new PIXI.SpriteBatch();
-stage.addChild(batch);
 for (var y = 0; y < rows; y++) {
   for (var x = 0; x < cols; x++) {
     var sprite = new PIXI.Sprite(glyphs[0]);
     sprite.position.x = x * tileWidth;
     sprite.position.y = y * tileHeight;
-    /* FIXME: check if there's a way to use tinted sprites with batches */
-    //batch.addChild(sprite);
     stage.addChild(sprite)
     vconsole[y * cols + x] = sprite;
   }
@@ -46,6 +54,10 @@ for (var y = 0; y < rows; y++) {
 /* set up input */
 document.addEventListener('keydown', function(e) {
   console.log(e.keyCode);
+  /* prevent arrow keys scrolling */
+  if([32, 37, 38, 39, 40].indexOf(e.keyCode) > -1) {
+    e.preventDefault();
+  }
   inputMessage = new Object();
   inputMessage["keycode"] = e.keyCode;
   inputMessage["shift"] = e.shiftKey;
@@ -56,7 +68,6 @@ document.addEventListener('keydown', function(e) {
 /* main loop */
 requestAnimFrame(animate);
 function animate() {
-  requestAnimFrame(animate);
   renderer.render(stage);
 }
 
@@ -67,7 +78,10 @@ function onMessage(e) {
   for (var i = 0; i < data["tiles"].length; i++) {
     var tile = data["tiles"][i];
     var cell = vconsole[tile[1] * cols + tile[0]];
+    var bg = vconsoleBg[tile[1] * cols + tile[0]];
     cell.texture = glyphs[tile[2]];
     cell.tint = tile[3];
+    bg.tint = tile[4];
   }
+  requestAnimFrame(animate);
 }

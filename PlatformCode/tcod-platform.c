@@ -372,7 +372,9 @@ void TCOD_console_flush() {
             cJSON_AddItemToArray(tile, cJSON_CreateNumber(y));
             cJSON_AddItemToArray(tile, cJSON_CreateNumber(cell->character));
             int fg = color_to_js(cell->foreground);
+            int bg = color_to_js(cell->background);
             cJSON_AddItemToArray(tile, cJSON_CreateNumber(fg));
+            cJSON_AddItemToArray(tile, cJSON_CreateNumber(bg));
         }
     }
     char *json = cJSON_Print(root);
@@ -608,7 +610,7 @@ static bool tcod_pauseForMilliseconds(short milliseconds)
     TCOD_sys_sleep_milli((unsigned int) milliseconds);
     /* FIXME: lag? never heard of it! */
     int n;
-    n = libwebsocket_service(context, 3000);
+    n = libwebsocket_service(context, 0);
 
     if (bufferedKey.vk == TCODK_NONE) {
         bufferedKey = TCOD_console_check_for_keypress(TCOD_KEY_PRESSED);
@@ -718,6 +720,8 @@ static void tcod_nextKeyOrMouseEvent(rogueEvent *returnEvent, bool textInput, bo
 
         rewriteKey(&key, textInput);
         if (processKeystroke(key, returnEvent, textInput)) {
+            // FIXME: shaky
+            bufferedKey.vk = TCODK_NONE;
             return;
         }
 
@@ -734,8 +738,7 @@ static void tcod_nextKeyOrMouseEvent(rogueEvent *returnEvent, bool textInput, bo
         }
         */
 
-        if (
-                mouse.lbutton_pressed || mouse.rbutton_pressed
+        if (mouse.lbutton_pressed || mouse.rbutton_pressed
                 || mouse.lbutton != brogueMouse.lmb || mouse.rbutton != brogueMouse.rmb
                 || brogueMouse.x !=x || brogueMouse.y != y) {
 
